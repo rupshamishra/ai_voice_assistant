@@ -1,0 +1,311 @@
+<script>
+    class VoiceOnlyAssistant {
+        constructor() {
+            this.recognition = null;
+            this.isListening = false;
+            this.language = 'en';
+            this.userId = 'user-' + Date.now();
+            this.synth = window.speechSynthesis;
+            this.isSpeaking = false;
+            this.init();
+        }
+
+        init() {
+            this.setupEventListeners();
+            this.initSpeechRecognition();
+            this.speakWelcome();
+        }
+
+        setupEventListeners() {
+            document.getElementById('language').addEventListener('change', (e) => {
+                this.language = e.target.value;
+                this.speakWelcome();
+            });
+
+            document.getElementById('voiceBtn').addEventListener('click', () => {
+                this.toggleListening();
+            });
+
+            // Quick actions will now trigger voice commands
+            document.querySelectorAll('.action-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    const action = e.target.dataset.action;
+                    this.handleQuickAction(action);
+                });
+            });
+
+            document.getElementById('verifyBtn').addEventListener('click', () => {
+                this.verifyOTP();
+            });
+
+            document.getElementById('otpInput').addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    this.verifyOTP();
+                }
+            });
+        }
+
+        initSpeechRecognition() {
+            if ('webkitSpeechRecognition' in window) {
+                this.recognition = new webkitSpeechRecognition();
+                this.recognition.continuous = false;
+                this.recognition.interimResults = false;
+                
+                this.recognition.onstart = () => {
+                    this.isListening = true;
+                    this.updateUI();
+                    this.showStatus('🎤 Listening... Speak now');
+                    this.addConversation('You: (Listening...)', 'user');
+                };
+
+                this.recognition.onresult = (event) => {
+                    const transcript = event.results[0][0].transcript;
+                    this.addConversation(`You: ${transcript}`, 'user');
+                    this.processVoiceCommand(transcript);
+                };
+
+                this.recognition.onerror = (event) => {
+                    this.showStatus('Error: ' + event.error);
+                    this.stopListening();
+                };
+
+                this.recognition.onend = () => {
+                    this.stopListening();
+                };
+            } else {
+                this.showStatus('Voice not supported. Please use Chrome browser.');
+            }
+        }
+
+        async processVoiceCommand(command) {
+            try {
+                const response = await fetch('/api/process-voice', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        command: command,
+                        language: this.language,
+                        userId: this.userId
+                    })
+                });
+
+                const result = await response.json();
+                
+                // SPEAK THE RESPONSE (NO TEXT MESSAGE)
+                this.speakText(result.voiceMessage);
+                this.addConversation(`Sahayata: (Speaking...)`, 'ai');
+                
+                if (result.requiresOTP) {
+                    this.showOTP(result.otp);
+                    // Also speak OTP instruction
+                    setTimeout(() => {
+                        const otpMsg = this.language === 'bn' ? 
+                            "OTP পাঠানো হয়েছে। দয়া করে OTP বলুন。" :
+                            "OTP has been sent. Please speak the OTP.";
+                        this.speakText(otpMsg);
+                    }, 2000);
+                }
+                
+            } catch (error) {
+                const errorMsg = this.language === 'bn' ? 
+                    "দুঃখিত, ত্রুটি হয়েছে। আবার চেষ্টা করুন。" :
+                    "Sorry, error occurred. Please try again.";
+                
+                this.speakText(errorMsg);
+                this.addConversation('Sahayata: (Error occurred)', 'ai');
+            }
+        }
+
+        speakText(text) {
+            if (this.synth.speaking) {
+                this.synth.cancel();
+            }
+
+            this.isSpeaking = true;
+            this.updateUI();
+
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.lang = this.getSpeechLanguage();
+            utterance.rate = 0.8;
+            utterance.pitch = 1;
+            utterance.volume = 1;
+
+            utterance.onstart = () => {
+                console.log('AI started speaking:', text);
+            };
+
+            utterance.onend = () => {
+                this.isSpeaking = false;
+                this.updateUI();
+                console.log('AI finished speaking');
+                
+                // Auto-start listening after speaking (except for OTP flow)
+                if (!document.getElementById('otpSection').classList.contains('hidden')) {
+                    this.showStatus('Please enter OTP or speak the OTP code');
+                } else {
+                    setTimeout(() => {
+                        this.startListening();
+                    }, 1000);
+                }
+            };
+
+            utterance.onerror = (event) => {
+                this.isSpeaking = false;
+                this.updateUI();
+                console.error('Speech error:', event);
+            };
+
+            this.synth.speak(utterance);
+        }
+
+        speakWelcome() {
+            fetch('/api/welcome', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    language: this.language,
+                    userId: this.userId
+                })
+            })
+            .then(response => response.json())
+            .then(result => {
+                this.speakText(result.voiceMessage);
+                this.addConversation('Sahayata: (Welcome message...)', 'ai');
+            });
+        }
+
+        handleQuickAction(action) {
+            const commands = {
+                'en': {
+                    balance: 'check balance',
+                    transfer: 'send money',
+                    account: 'open account',
+                    loan: 'loan information',
+                    upi: 'UPI guide'
+                },
+                'bn': {
+                    balance: 'ব্যালেন্স চেক',
+                    transfer: 'টাকা পাঠান',
+                    account: 'অ্যাকাউন্ট খোলা',
+                    loan: 'ঋণ সম্পর্কে',
+                    upi: 'ইউপিআই গাইড'
+                },
+                'hi': {
+                    balance: 'बैलेंस चेक',
+                    transfer: 'पैसे भेजें',
+                    account: 'खाता खोलें',
+                    loan: 'लोन की जानकारी',
+                    upi: 'यूपीआई गाइड'
+                }
+            };
+            
+            const langCommands = commands[this.language] || commands['en'];
+            if (langCommands[action]) {
+                this.addConversation(`You: ${langCommands[action]}`, 'user');
+                this.processVoiceCommand(langCommands[action]);
+            }
+        }
+
+        // ... rest of your methods (showOTP, verifyOTP, addConversation, etc.)
+
+        showOTP(otp) {
+            document.getElementById('otpValue').textContent = otp;
+            document.getElementById('otpSection').classList.remove('hidden');
+            document.getElementById('otpInput').focus();
+            this.showStatus('📱 OTP sent to your mobile: ' + otp);
+        }
+
+        verifyOTP() {
+            const input = document.getElementById('otpInput').value;
+            const actual = document.getElementById('otpValue').textContent;
+            
+            if (input === actual) {
+                this.addConversation('You: OTP verified', 'user');
+                const successMsg = this.language === 'bn' ?
+                    "লেনদেন সফলভাবে সম্পন্ন হয়েছে!" :
+                    "Transaction completed successfully!";
+                this.speakText(successMsg);
+                this.addConversation('Sahayata: (Transaction success)', 'ai');
+                document.getElementById('otpSection').classList.add('hidden');
+                document.getElementById('otpInput').value = '';
+                
+                // Auto-start listening after success
+                setTimeout(() => this.startListening(), 2000);
+            } else {
+                this.addConversation('You: Wrong OTP', 'user');
+                const errorMsg = this.language === 'bn' ?
+                    "ভুল OTP। আবার চেষ্টা করুন。" :
+                    "Wrong OTP. Please try again.";
+                this.speakText(errorMsg);
+                this.addConversation('Sahayata: (Wrong OTP)', 'ai');
+            }
+        }
+
+        addConversation(text, sender) {
+            const conv = document.getElementById('conversation');
+            const msg = document.createElement('div');
+            msg.className = `message ${sender}`;
+            msg.innerHTML = text;
+            conv.appendChild(msg);
+            conv.scrollTop = conv.scrollHeight;
+        }
+
+        toggleListening() {
+            if (this.isSpeaking) {
+                this.synth.cancel();
+                this.isSpeaking = false;
+                this.updateUI();
+            } else if (this.isListening) {
+                this.stopListening();
+            } else {
+                this.startListening();
+            }
+        }
+
+        startListening() {
+            if (this.recognition && !this.isSpeaking) {
+                this.recognition.lang = this.getSpeechLanguage();
+                this.recognition.start();
+            }
+        }
+
+        stopListening() {
+            this.isListening = false;
+            this.updateUI();
+            this.showStatus('Click microphone to speak');
+        }
+
+        updateUI() {
+            const btn = document.getElementById('voiceBtn');
+            if (this.isSpeaking) {
+                btn.classList.add('listening');
+                btn.innerHTML = '🔊 AI Speaking...';
+                btn.style.background = '#00b894';
+            } else if (this.isListening) {
+                btn.classList.add('listening');
+                btn.innerHTML = '🎤 Listening...';
+                btn.style.background = '#ff6b6b';
+            } else {
+                btn.classList.remove('listening');
+                btn.innerHTML = '🎤 Click & Speak';
+                btn.style.background = '';
+            }
+        }
+
+        getSpeechLanguage() {
+            const languageMap = {
+                'en': 'en-IN', 'hi': 'hi-IN', 'bn': 'bn-IN', 'ta': 'ta-IN'
+            };
+            return languageMap[this.language] || 'en-IN';
+        }
+
+        showStatus(msg) {
+            document.getElementById('status').textContent = msg;
+        }
+    }
+
+    // Start the voice-only assistant
+    document.addEventListener('DOMContentLoaded', () => {
+        new VoiceOnlyAssistant();
+    });
+</script>

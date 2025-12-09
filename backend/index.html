@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sahayata - Voice Banking Assistant</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: Arial, sans-serif; 
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            padding: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        }
+        header {
+            text-align: center;
+            margin-bottom: 20px;
+            padding: 20px;
+            background: linear-gradient(135deg, #4facfe, #00f2fe);
+            border-radius: 10px;
+            color: white;
+        }
+        h1 { font-size: 2.5rem; margin-bottom: 10px; }
+        .tagline { font-size: 1.1rem; opacity: 0.9; }
+        
+        .language-selector {
+            text-align: center;
+            margin: 20px 0;
+        }
+        select, button, input {
+            padding: 10px 15px;
+            margin: 5px;
+            border: none;
+            border-radius: 5px;
+            font-size: 1rem;
+        }
+        select { border: 2px solid #4facfe; }
+        
+        .voice-btn {
+            background: #ff6b6b;
+            color: white;
+            padding: 15px 30px;
+            border-radius: 25px;
+            font-size: 1.2rem;
+            cursor: pointer;
+            display: block;
+            margin: 20px auto;
+            transition: all 0.3s;
+        }
+        .voice-btn:hover { transform: scale(1.05); }
+        .listening { background: #00b894 !important; animation: pulse 1.5s infinite; }
+        
+        .conversation {
+            background: #f8f9fa;
+            border: 2px solid #e9ecef;
+            border-radius: 10px;
+            padding: 15px;
+            height: 300px;
+            overflow-y: auto;
+            margin: 20px 0;
+        }
+        .message {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 8px;
+        }
+        .user { background: #e3f2fd; text-align: right; }
+        .ai { background: #f3e5f5; }
+        
+        .actions {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px;
+            margin: 20px 0;
+        }
+        .action-btn {
+            background: #74b9ff;
+            color: white;
+            padding: 10px;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        
+        .otp-section {
+            background: #e8f5e8;
+            border: 2px solid #4caf50;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 15px 0;
+            text-align: center;
+        }
+        .hidden { display: none; }
+        
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Sahayata</h1>
+            <p class="tagline">हर आवाज़ को मिले मदद - Voice Banking Assistant</p>
+        </header>
+        
+        <div class="language-selector">
+            <label>Language:</label>
+            <select id="language">
+                <option value="en">English</option>
+                <option value="hi">Hindi</option>
+                <option value="bn">Bengali</option>
+                <option value="ta">Tamil</option>
+                <option value="te">Telugu</option>
+            </select>
+        </div>
+        
+        <div class="conversation" id="conversation">
+            <div class="message ai">
+                <strong>Sahayata:</strong> Hello! I can help you with banking. Try saying "check balance" or "send money".
+            </div>
+        </div>
+        
+        <button class="voice-btn" id="voiceBtn">
+            🎤 Click & Speak
+        </button>
+        <div id="status" style="text-align: center; color: #666;">Ready to listen...</div>
+        
+        <div class="actions">
+            <button class="action-btn" data-action="balance">Check Balance</button>
+            <button class="action-btn" data-action="transfer">Send Money</button>
+            <button class="action-btn" data-action="account">Open Account</button>
+            <button class="action-btn" data-action="loan">Loan Info</button>
+            <button class="action-btn" data-action="upi">UPI Guide</button>
+        </div>
+        
+        <div class="otp-section hidden" id="otpSection">
+            <h3>OTP Verification</h3>
+            <p>OTP sent: <strong id="otpValue">123456</strong></p>
+            <div>
+                <input type="text" id="otpInput" placeholder="Enter OTP" maxlength="6">
+                <button id="verifyBtn">Verify</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        class SimpleVoiceAssistant {
+            constructor() {
+                this.recognition = null;
+                this.isListening = false;
+                this.language = 'en';
+                this.userId = 'user-' + Date.now();
+                this.synth = window.speechSynthesis;
+                this.init();
+            }
+
+            init() {
+                this.setupEventListeners();
+                this.initSpeechRecognition();
+                this.speakWelcome();
+            }
+
+            setupEventListeners() {
+                document.getElementById('language').addEventListener('change', (e) => {
+                    this.language = e.target.value;
+                    this.speakWelcome();
+                });
+
+                document.getElementById('voiceBtn').addEventListener('click', () => {
+                    this.toggleListening();
+                });
+
+                document.querySelectorAll('.action-btn').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        const action = e.target.dataset.action;
+                        this.handleQuickAction(action);
+                    });
+                });
+
+                document.getElementById('verifyBtn').addEventListener('click', () => {
+                    this.verifyOTP();
+                });
+
+                document.getElementById('otpInput').addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') {
+                        this.verifyOTP();
+                    }
+                });
+            }
+
+            initSpeechRecognition() {
+                if ('webkitSpeechRecognition' in window) {
+                    this.recognition = new webkitSpeechRecognition();
+                    this.recognition.continuous = false;
+                    this.recognition.interimResults = false;
+                    
+                    this.recognition.onstart = () => {
+                        this.isListening = true;
+                        this.updateUI();
+                        this.showStatus('Listening... Speak now');
+                    };
+
+                    this.recognition.onresult = (event) => {
+                        const transcript = event.results[0][0].transcript;
+                        this.addMessage(transcript, 'user');
+                        this.processCommand(transcript);
+                    };
+
+                    this.recognition.onerror = (event) => {
+                        this.showStatus('Error: ' + event.error);
+                        this.stopListening();
+                    };
+
+                    this.recognition.onend = () => {
+                        this.stopListening();
+                    };
+                } else {
+                    this.showStatus('Voice not supported. Use Chrome.');
+                }
+            }
+
+            async processCommand(command) {
+                try {
+                    const response = await fetch('/api/process-command', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            command: command,
+                            language: this.language,
+                            userId: this.userId
+                        })
+                    });
+
+                    const result = await response.json();
+                    this.addMessage(result.message, 'ai');
+                    this.speakText(result.message);
+                    
+                    if (result.requiresOTP) {
+                        this.showOTP(result.otp);
+                    }
+                    
+                } catch (error) {
+                    console.error('Error:', error);
+                    const errorMsg = this.language === 'bn' ? 
+                        "ত্রুটি হয়েছে। আবার চেষ্টা করুন。" :
+                        "Error occurred. Please try again.";
+                    this.addMessage(errorMsg, 'ai');
+                    this.speakText(errorMsg);
+                }
+            }
+
+            speakText(text) {
+                if (this.synth.speaking) {
+                    this.synth.cancel();
+                }
+
+                const utterance = new SpeechSynthesisUtterance(text);
+                utterance.lang = this.getSpeechLanguage();
+                utterance.rate = 0.8;
+                utterance.pitch = 1;
+                
+                this.synth.speak(utterance);
+            }
+
+            speakWelcome() {
+                const welcomeMessages = {
+                    'en': "Welcome to Sahayata Voice Banking. How can I help you?",
+                    'hi': "सहायता वॉइस बैंकिंग में आपका स्वागत है। मैं आपकी कैसे मदद कर सकती हूं?",
+                    'bn': "সাহায্য ভয়েস ব্যাংকিংয়ে স্বাগতম। আমি আপনাকে কিভাবে সাহায্য করতে পারি?"
+                };
+                
+                const message = welcomeMessages[this.language] || welcomeMessages['en'];
+                this.speakText(message);
+            }
+
+            handleQuickAction(action) {
+                const commands = {
+                    'en': {
+                        balance: 'check balance',
+                        transfer: 'send money',
+                        account: 'open account',
+                        loan: 'loan information',
+                        upi: 'UPI guide'
+                    },
+                    'hi': {
+                        balance: 'बैलेंस चेक',
+                        transfer: 'पैसे भेजें',
+                        account: 'खाता खोलें',
+                        loan: 'लोन की जानकारी',
+                        upi: 'यूपीआई गाइड'
+                    },
+                    'bn': {
+                        balance: 'ব্যালেন্স চেক',
+                        transfer: 'টাকা পাঠান',
+                        account: 'অ্যাকাউন্ট খোলা',
+                        loan: 'ঋণ সম্পর্কে',
+                        upi: 'ইউপিআই গাইড'
+                    }
+                };
+                
+                const langCommands = commands[this.language] || commands['en'];
+                if (langCommands[action]) {
+                    this.addMessage(langCommands[action], 'user');
+                    this.processCommand(langCommands[action]);
+                }
+            }
+
+            addMessage(text, sender) {
+                const conv = document.getElementById('conversation');
+                const msg = document.createElement('div');
+                msg.className = `message ${sender}`;
+                msg.innerHTML = `<strong>${sender === 'user' ? 'You' : 'Sahayata'}:</strong> ${text}`;
+                conv.appendChild(msg);
+                conv.scrollTop = conv.scrollHeight;
+            }
+
+            showOTP(otp) {
+                document.getElementById('otpValue').textContent = otp;
+                document.getElementById('otpSection').classList.remove('hidden');
+                document.getElementById('otpInput').focus();
+            }
+
+            verifyOTP() {
+                const input = document.getElementById('otpInput').value;
+                const actual = document.getElementById('otpValue').textContent;
+                
+                if (input === actual) {
+                    this.addMessage('OTP verified successfully!', 'user');
+                    const successMsg = this.language === 'bn' ?
+                        "লেনদেন সফলভাবে সম্পন্ন হয়েছে!" :
+                        "Transaction completed successfully!";
+                    this.addMessage(successMsg, 'ai');
+                    this.speakText(successMsg);
+                    document.getElementById('otpSection').classList.add('hidden');
+                    document.getElementById('otpInput').value = '';
+                } else {
+                    this.addMessage('Wrong OTP entered', 'user');
+                    const errorMsg = this.language === 'bn' ?
+                        "ভুল OTP। আবার চেষ্টা করুন。" :
+                        "Wrong OTP. Please try again.";
+                    this.addMessage(errorMsg, 'ai');
+                    this.speakText(errorMsg);
+                }
+            }
+
+            toggleListening() {
+                if (this.isListening) {
+                    this.stopListening();
+                } else {
+                    this.startListening();
+                }
+            }
+
+            startListening() {
+                if (this.recognition) {
+                    this.recognition.lang = this.getSpeechLanguage();
+                    this.recognition.start();
+                }
+            }
+
+            stopListening() {
+                this.isListening = false;
+                this.updateUI();
+                this.showStatus('Click microphone to speak');
+            }
+
+            updateUI() {
+                const btn = document.getElementById('voiceBtn');
+                if (this.isListening) {
+                    btn.classList.add('listening');
+                    btn.textContent = '🛑 Stop Listening';
+                } else {
+                    btn.classList.remove('listening');
+                    btn.textContent = '🎤 Click & Speak';
+                }
+            }
+
+            getSpeechLanguage() {
+                const languageMap = {
+                    'en': 'en-IN',
+                    'hi': 'hi-IN', 
+                    'bn': 'bn-IN',
+                    'ta': 'ta-IN',
+                    'te': 'te-IN'
+                };
+                return languageMap[this.language] || 'en-IN';
+            }
+
+            showStatus(msg) {
+                document.getElementById('status').textContent = msg;
+            }
+        }
+
+        // Start the assistant when page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            new SimpleVoiceAssistant();
+        });
+    </script>
+</body>
+</html>
